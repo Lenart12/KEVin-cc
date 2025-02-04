@@ -1,0 +1,9 @@
+# python
+.venv
+*.pyc
+*.pyo
+__pycache__
+*.swp
+*.log
+
+config.yaml

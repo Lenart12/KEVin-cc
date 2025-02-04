@@ -1,0 +1,129 @@
+api:
+  url: # Home Assistant URL
+  token: # Home Assistant Long-Lived Access Token
+  entities:
+    switch_set_charging: switch.tesla_model_y_charger
+    number_set_charging_amps: number.tesla_model_y_charging_current
+  templates:
+    charging_amps: '{{ states("number.tesla_model_y_charging_current") }}'
+    charging_limit: '{{ states("sensor.tesla_model_y_charging_limit_last_known") }}'
+    charging_plan: '{{ states("input_select.tesla_model_y_charging_plan") }}'
+    inverter_soc: '{{ states("sensor.deye_inverter_mqtt_battery_soc") }}'
+    car_soc: '{{ states("sensor.tesla_model_y_battery_level_last_known") }}'
+    total_load: >-
+      {{ states("sensor.deye_inverter_mqtt_essential_power_computed")|float +
+         states("sensor.heat_pump_current_power_consumption")|float +
+         states("sensor.smart_plug_19bd1d_bl0942_power")|float +
+         states("sensor.deye_inverter_mqtt_battery_power")|float }}
+    grid_power: '{{ states("sensor.solaredge_i1_m1_ac_power") }}'
+    pv_power: '{{ states("sensor.solar_power_computed") }}'
+    charger_connected: '{{ states("binary_sensor.tesla_model_y_charge_cable_last_known") }}'
+    is_charging: '{{ states("switch.tesla_model_y_charger") }}'
+
+charger:  
+  min_amps: 5
+  max_amps: 16
+  min_power: 3450 # 3 phases * 230V * 5A
+  max_power: 11040 # 3 phases * 230V * 16A
+  vehicle_battery_capacity: 57500 # 57.5kWh (Model Y LFP)
+  phases: 3
+  volts: 230
+  poll_interval: 30
+  charge_efficiency_factor: 1.05 # 1.05 assumes it takes 5% more power to charge than expected
+  nightly: # HH:MM format
+    start: '22:00' # Start of charging window
+    end: '06:00' # End of charging window
+
+battery:
+  no_charging:
+    soc: 25
+    max_power: 0 
+  reserve:
+    soc: 30
+    max_power: 5000 # 5kW from grid
+  peak_shaving_minimal:
+    soc: 40
+    max_power: 8000 # 8kW from grid
+  peak_shaving:
+    soc: 100
+    max_power: 18000 # 8kW grid + 10kW battery
+
+mqtt:
+  host: # MQTT Broker Host
+  port: 1883
+  username: # MQTT Broker Username
+  password: # MQTT Broker Password
+  discovery_topic: homeassistant/device/kcc
+  discovery: # TODO: Implement MQTT Discovery
+    availability_topic: kcc/status
+    device:
+      name: KEVin Charger Controller
+      manufacturer: Wigaun DIY
+      via_device: tb2m_LRWYGCFSXPC882647
+      identifiers:
+        - kcc
+      sw_version: 0.0.1
+    origin:
+      name: KEVin Charger Controller
+    components:
+      charging_plan:
+        name: Charging Plan
+        command_topic: kcc/charging_plan/set
+        platform: select
+        options:
+          - Manual
+          - Solar only
+          - Min + Solar
+          - Nightly
+          - Min battery load
+          - Max speed
+      max_power_solar:
+        name: Max Power Solar only
+        state_topic: kcc/max_power_solar_only/state
+        platform: number
+        unit_of_measurement: W
+      max_power_min_solar:
+        name: Max Power Min + Solar
+        state_topic: kcc/max_power_min_solar/state
+        platform: number
+        unit_of_measurement: W
+      max_power_min_battery:
+        name: Max Power Min battery load
+        state_topic: kcc/max_power_min_battery/state
+        platform: number
+        unit_of_measurement: W
+      max_power_full:
+        name: Max Power Full
+        state_topic: kcc/max_power_full/state
+        platform: number
+        unit_of_measurement: W
+      plan_amps_solar_only:
+        name: Plan Amps Solar only
+        state_topic: kcc/plan_amps_solar_only/state
+        platform: number
+        unit_of_measurement: A
+      plan_amps_min_solar:
+        name: Plan Amps Min + Solar
+        state_topic: kcc/plan_amps_min_solar/state
+        platform: number
+        unit_of_measurement: A
+      plan_amps_nightly:
+        name: Plan Amps Nightly
+        state_topic: kcc/plan_amps_nightly/state
+        platform: number
+        unit_of_measurement: A
+      plan_amps_min_battery:
+        name: Plan Amps Min battery load
+        state_topic: kcc/plan_amps_min_battery/state
+        platform: number
+        unit_of_measurement: A
+      plan_amps_max_speed:
+        name: Plan Amps Max speed
+        state_topic: kcc/plan_amps_max_speed/state
+        platform: number
+        unit_of_measurement: A
+      plan_amps_target:
+        name: Plan Amps Target
+        state_topic: kcc/plan_amps_target/state
+        platform: number
+        unit_of_measurement: A
