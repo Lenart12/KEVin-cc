@@ -215,7 +215,8 @@ class WigaunApi(HomeassistantApi):
         """
         Get the inverter state of charge
         """
-        return float(self.template(self.c.inverter_soc_template))
+        soc = self.template(self.c.inverter_soc_template)
+        return float(soc) if soc not in ['unavailable', 'unknown'] else 0
 
     def get_total_load(self) -> float:
         """
