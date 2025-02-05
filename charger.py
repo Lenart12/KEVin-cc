@@ -361,7 +361,7 @@ def main(c: Config, api: WigaunApi):
             log.debug(f'Max power with {ps.name}: {ps_max_power}w')
 
         charging_amps = {}
-        for plan in [p for p in ChargingPlan if p != ChargingPlan.Manual]:
+        for plan in [p for p in ChargingPlan]:
             target_amps = calculate_charging_amps(c, plan, power_sources[plan.get_power_source()], car_soc, charging_limit)
             target_power = target_amps * c.volts * c.phases * c.charge_efficiency_factor
             log.debug(f'Calculated charging amps for {plan.name}: {target_amps}A -> {target_power}W')
