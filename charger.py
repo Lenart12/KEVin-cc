@@ -1,11 +1,9 @@
 import enum
-import json
 import math
 import time
 import httpx
 from config import Config
 import logging
-import paho.mqtt.client as mqtt
 
 log = logging.getLogger('charger')
 
@@ -57,20 +55,6 @@ class ChargingPowerSource(enum.Enum):
         if self == ChargingPowerSource.Full:
             return max(0, pv_power - total_load + battery_strategy.max_charing_power_with_grid(c))
 
-    def get_max_power_state_topic(self, c: Config):
-        def get_topic(comp_name: str) -> str:
-            return c.mqtt_discovery['components'][comp_name]['state_topic']
-        if self == ChargingPowerSource.NoCharing:
-            return None
-        if self == ChargingPowerSource.SolarOnly:
-            return get_topic('max_power_solar')
-        if self == ChargingPowerSource.MinPlusSolar:
-            return get_topic('max_power_min_solar')
-        if self == ChargingPowerSource.MinBatteryLoad:
-            return get_topic('max_power_min_battery')
-        if self == ChargingPowerSource.Full:
-            return get_topic('max_power_full')
-
 def get_nightly_time(c: Config) -> tuple[bool, int]:
     """
     Return if it is night and the time to morning
@@ -118,23 +102,6 @@ class ChargingPlan(enum.Enum):
             return ChargingPowerSource.Full
         return ChargingPowerSource.NoCharing
 
-    def get_amps_state_topic(self, c: Config) -> str:
-        def get_topic(comp_name: str) -> str:
-            return c.mqtt_discovery['components'][comp_name]['state_topic']
-        if self == ChargingPlan.Manual:
-            return None
-        if self == ChargingPlan.SolarOnly:
-            return get_topic('plan_amps_solar_only')
-        if self == ChargingPlan.MinPlusSolar:
-            return get_topic('plan_amps_min_solar')
-        if self == ChargingPlan.Nightly:
-            return get_topic('plan_amps_nightly')
-        if self == ChargingPlan.MinBatteryLoad:
-            return get_topic('plan_amps_min_battery')
-        if self == ChargingPlan.MaxSpeed:
-            return get_topic('plan_amps_max_speed')
-
-    
 class HomeassistantApi:
     def __init__(self, c: Config):
         self.c = c
@@ -338,32 +305,7 @@ def calculate_charging_amps(c: Config, plan: ChargingPlan, max_power: float, cur
 
     return 0
 
-def start_mqtt(c: Config):
-    client = mqtt.Client(mqtt.CallbackAPIVersion.VERSION2, 'kcc')
-    client.username_pw_set(c.mqtt_user, c.mqtt_pass)
-    def on_connect(client, userdata, flags, reason_code, properties):
-        log.info(f'Connected to MQTT with result code {reason_code}')
-        if reason_code != 0:
-            log.fatal('Could not connect to MQTT')
-            return
-        reset_copy = json.loads(json.dumps(c.mqtt_discovery))
-        for comp_name in reset_copy['components']:
-            # Keep only the platform key
-            comp = reset_copy['components'][comp_name]
-            reset_copy['components'][comp_name] = {k: comp[k] for k in comp if k == 'platform'}
-
-        log.debug(f'Publishing discovery message: {json.dumps(c.mqtt_discovery)}')
-        # client.publish(c.mqtt_discovery_topic, json.dumps(reset_copy), retain=True)
-        client.publish(c.mqtt_discovery_topic, json.dumps(c.mqtt_discovery), retain=True)          
-        client.publish(c.mqtt_availability_topic, 'online', retain=True)
-    
-    client.on_connect = on_connect
-    client.will_set(c.mqtt_availability_topic, 'offline', retain=True)
-    client.connect(c.mqtt_host, c.mqtt_port)
-    client.loop_start()
-    return client
-
-if __name__ == '__main__':
+def main():
     logging.basicConfig(level=logging.DEBUG, format='%(asctime)s - %(levelname)s:%(name)s:%(message)s')
     logging.getLogger('httpcore.http11').setLevel(logging.WARNING)
     if log.getEffectiveLevel() == logging.DEBUG:
@@ -374,8 +316,6 @@ if __name__ == '__main__':
     log.info("Starting charger controller")
     c = Config()
     api = WigaunApi(c)
-    min_charge_power = c.min_power * c.charge_efficiency_factor
-    mqtt_client = start_mqtt(c)
 
     # Remember the state of the charger to detect when
     # to switch to manual mode
@@ -486,3 +426,6 @@ if __name__ == '__main__':
                     api.set_charging_amps(target_charging_amps)
                     remembered_charging_amps = target_charging_amps
         time.sleep(c.poll_interval)
+
+if __name__ == '__main__':
+    main()
