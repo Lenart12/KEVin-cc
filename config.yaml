@@ -1,6 +1,6 @@
 api:
-  url: # Home Assistant URL
-  token: # Home Assistant Long-Lived Access Token
+  url: $secret ha_api_url
+  token: $secret ha_api_token
   entities:
     switch_set_charging: switch.tesla_model_y_charger
     number_set_charging_amps: number.tesla_model_y_charging_current
@@ -50,12 +50,12 @@ battery:
     max_power: 18000 # 8kW grid + 10kW battery
 
 mqtt:
-  host: # MQTT Broker Host
+  host: $secret mqtt_host
   port: 1883
-  username: # MQTT Broker Username
-  password: # MQTT Broker Password
+  username: $secret mqtt_username
+  password: $secret mqtt_password
   discovery_topic: homeassistant/device/kcc
-  discovery: # TODO: Implement MQTT Discovery
+  discovery:
     availability_topic: kcc/status
     device:
       name: KEVin Charger Controller
