@@ -257,7 +257,7 @@ def calculate_charging_amps(c: Config, plan: ChargingPlan, max_power: float, cur
 
     # Check if there is enough power to charge
     if max_power < c.min_power * c.charge_efficiency_factor:
-        log.warning(f'Not enough power to charge with {max_power}W')
+        log.debug(f'Not enough power to charge with {max_power}W')
         return 0
 
     # Round down the maximum power to the nearest amp 
@@ -266,7 +266,7 @@ def calculate_charging_amps(c: Config, plan: ChargingPlan, max_power: float, cur
 
     # Check if there is enough power to charge with the minimum amps
     if max_amps < c.min_amps:
-        log.warning(f'Not enough power to charge with {max_amps}A')
+        log.debug(f'Not enough power to charge with {max_amps}A')
         return 0
 
     # Solar + Nightly: Determine which plan to use
@@ -386,9 +386,19 @@ def main(c: Config, api: WigaunApi):
 
         # 3. If values have changed unexpectedly, switch to manual mode
         if remembered_charging_enabled != charging or remembered_charging_amps != charging_amps and not was_manual:
-            log.info('Switching to manual mode')
             remembered_charging_enabled = charging
             remembered_charging_amps = charging_amps
+
+            if not charging:
+                # Wait to see if the charger is disconnected
+                log.debug('Waiting to see if the charger will be disconnected')
+                time.sleep(c.poll_interval)            
+                if not api.get_charger_connected():
+                    log.info('Charger disconnected')
+                    time.sleep(c.poll_interval)
+                    continue
+
+            log.info('Switching to manual mode')
             api.set_charging_plan(ChargingPlan.Manual)
             api.notification('KEVin', 'Nastavljeno na ročno polnjenje')
             was_manual = True
