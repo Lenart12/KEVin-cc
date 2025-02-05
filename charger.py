@@ -40,7 +40,7 @@ class ChargingPowerSource(enum.Enum):
     MinBatteryLoad = 'MinBatteryLoad' # Charge with grid and minimal battery usage
     Full = 'Full' # Charge with grid, solar and battery
 
-    def get_max_power(self, c: Config, pv_power: float, total_load: float, battery_strategy: BatteryLoadStrategy) -> float:
+    def get_max_power(self, c: Config, pv_power: float, total_load: float, battery_load: float, battery_strategy: BatteryLoadStrategy) -> float:
         if battery_strategy.max_charing_power_with_grid(c) < c.min_power * c.charge_efficiency_factor:
             log.warning('Not enough power with battery strategy')
             return 0
@@ -53,7 +53,7 @@ class ChargingPowerSource(enum.Enum):
         if self == ChargingPowerSource.MinBatteryLoad:
             if battery_strategy == BatteryLoadStrategy.PeakShaving:
                 battery_strategy = BatteryLoadStrategy.PeakShavingMininal
-            return max(0, pv_power - total_load + battery_strategy.max_charing_power_with_grid(c))
+            return max(0, pv_power - total_load - battery_load + battery_strategy.max_charing_power_with_grid(c))
         if self == ChargingPowerSource.Full:
             return max(0, pv_power - total_load + battery_strategy.max_charing_power_with_grid(c))
 
@@ -71,11 +71,32 @@ class ChargingPowerSource(enum.Enum):
         if self == ChargingPowerSource.Full:
             return get_topic('max_power_full')
 
+def get_nightly_time(c: Config) -> tuple[bool, int]:
+    """
+    Return if it is night and the time to morning
+    """
+    time_local = time.localtime()
+    time_now = time_local.tm_hour * 3600 + time_local.tm_min * 60 + time_local.tm_sec
+
+    # If it is not night, do not charge
+    if time_now > c.nightly_end and time_now < c.nightly_start:
+        return False, 0
+    
+    # Add a day if it is before the start time
+    time_now = time_now + 24 * 3600 if time_now < c.nightly_start else time_now
+    if c.nightly_end < c.nightly_start:
+        time_end = c.nightly_end + 24 * 3600
+
+    # Calculate the time to morning
+    remaining_time_s = time_end - time_now
+    return True, remaining_time_s
+
 class ChargingPlan(enum.Enum):
     Manual = 'Manual' # Charging not managed by the controller
     SolarOnly = 'Solar only' # Only as much as possible when there is solar power
     MinPlusSolar = 'Min + Solar' # Charge with min power (grid) plus solar
-    Nightly = 'Nightly' # Charge at night
+    Nightly = 'Nightly' # Charge only at night
+    SolarPlusNightly = 'Solar + Nightly' # Charge with solar and at night
     MinBatteryLoad = 'Min battery load' # Charge with grid and minimal battery usage
     MaxSpeed = 'Max speed' # Charge as fast as possible
 
@@ -88,6 +109,9 @@ class ChargingPlan(enum.Enum):
             return ChargingPowerSource.MinPlusSolar
         if self == ChargingPlan.Nightly:
             return ChargingPowerSource.Full
+        if self == ChargingPlan.SolarPlusNightly:
+            is_night, _ = get_nightly_time(c)
+            return ChargingPowerSource.Full if is_night else ChargingPowerSource.SolarOnly
         if self == ChargingPlan.MinBatteryLoad:
             return ChargingPowerSource.MinBatteryLoad
         if self == ChargingPlan.MaxSpeed:
@@ -118,7 +142,7 @@ class HomeassistantApi:
         self.token = c.api_token
         self.client = httpx.Client()
 
-    def action(self, domain: str, service: str, service_data: dict) -> dict:
+    def action(self, domain: str, service: str, service_data: dict) -> str:
         """
         Call a service
         """
@@ -152,17 +176,23 @@ class WigaunApi(HomeassistantApi):
     def __init__(self, c: Config):
         super().__init__(c)
 
-    def set_charging(self, charging: bool) -> dict:
+    def set_charging(self, charging: bool) -> str:
         """
         Set the charging state
         """
         return self.action('switch', 'turn_on' if charging else 'turn_off', {'entity_id': self.c.set_charging_entity_id})
     
-    def set_charging_amps(self, amps: int) -> dict:
+    def set_charging_amps(self, amps: int) -> str:
         """
         Set the charging amps
         """
         return self.action('number', 'set_value', {'entity_id': self.c.set_charging_amps_entity_id, 'value': amps})
+
+    def set_charging_plan(self, plan: ChargingPlan) -> str:
+        """
+        Set the charging plan
+        """
+        return self.action('input_select', 'select_option', {'entity_id': self.c.charging_plan_entity_id, 'option': plan.value})
 
     def get_charging_amps(self) -> int:
         """
@@ -177,6 +207,12 @@ class WigaunApi(HomeassistantApi):
         """
         limit = self.template(self.c.charging_limit_template)
         return int(limit) if limit not in ['unavailable', 'unknown'] else 0
+
+    def get_battery_load(self) -> float:
+        """
+        Get the battery load
+        """
+        return float(self.template(self.c.battery_load_template))
 
     def get_charging_plan(self) -> ChargingPlan:
         """
@@ -250,6 +286,15 @@ def calculate_charging_amps(c: Config, plan: ChargingPlan, max_power: float, cur
         log.warning(f'Not enough power to charge with {max_amps}A')
         return 0
 
+    # Solar + Nightly: Determine which plan to use
+    is_night = False
+    remaining_time_s = 0
+    if plan == ChargingPlan.SolarPlusNightly or plan == ChargingPlan.Nightly:
+        is_night, remaining_time_s = get_nightly_time(c)
+        if plan == ChargingPlan.SolarPlusNightly:
+            plan = ChargingPlan.Nightly if is_night else ChargingPlan.SolarOnly
+
+    # Process the plan
     if plan == ChargingPlan.Manual:
         return 0
     if plan == ChargingPlan.SolarOnly:
@@ -258,28 +303,16 @@ def calculate_charging_amps(c: Config, plan: ChargingPlan, max_power: float, cur
             return 0
         return min(max_amps, c.max_amps)
     if plan == ChargingPlan.Nightly:
-        # Get day seconds
-        time_local = time.localtime()
-        time_now = time_local.tm_hour * 3600 + time_local.tm_min * 60 + time_local.tm_sec
-        log.debug(f'Time now: {time_now} Nightly start: {c.nightly_start} Nightly end: {c.nightly_end}')
-
-        # If it is not night, do not charge
-        if time_now > c.nightly_end and time_now < c.nightly_start:
+        if not is_night:
             log.debug('Not night')
             return 0
-
-        # Add a day if it is before the start time
-        time_now = time_now + 24 * 3600 if time_now < c.nightly_start else time_now
-        if c.nightly_end < c.nightly_start:
-            time_end = c.nightly_end + 24 * 3600
-
-        # Calculate the time to morning
-        remaining_time_s = time_end - time_now
-        log.debug(f'Time to morning: {remaining_time_s}')
 
         # Calculate the power needed to charge the car to the limit
         remaining_capacity_wh = c.vehicle_battery_capacity * (limit_soc - current_soc) / 100
         remaining_time_h = remaining_time_s / 3600
+        if remaining_time_h == 0:
+            log.debug('Not enough time to charge')
+            return 0
         required_amps = remaining_capacity_wh / (remaining_time_h * c.volts * c.phases)
         log.debug(f'Remaining capacity: {remaining_capacity_wh:.2f}Wh Remaining time: {remaining_time_h:.2f}h Required amps: {required_amps:.2f}A')
 
@@ -338,6 +371,12 @@ if __name__ == '__main__':
     min_charge_power = c.min_power * c.charge_efficiency_factor
     mqtt_client = start_mqtt(c)
 
+    # Remember the state of the charger to detect when
+    # to switch to manual mode
+    was_manual = api.get_charging_plan() == ChargingPlan.Manual
+    remembered_charging_enabled = api.get_is_charging()
+    remembered_charging_amps = api.get_charging_amps()
+
     while True:
         # Get all the data
         try:
@@ -346,6 +385,7 @@ if __name__ == '__main__':
             charging_plan = api.get_charging_plan()
             inverter_soc = api.get_inverter_soc()
             car_soc = api.get_car_soc()
+            battery_load = api.get_battery_load()
             total_load = api.get_total_load()
             grid_power = api.get_grid_power()
             pv_power = api.get_pv_power()
@@ -363,6 +403,7 @@ if __name__ == '__main__':
         log.debug(f'Charging plan: {charging_plan}')
         log.debug(f'Inverter SOC: {inverter_soc}%')
         log.debug(f'Car SOC: {car_soc}%')
+        log.debug(f'Battery load: {battery_load}w')
         log.debug(f'Total Load: {total_load}w')
         log.debug(f'Grid Power: {grid_power}w')
         log.debug(f'PV Power: {pv_power}w')
@@ -370,7 +411,7 @@ if __name__ == '__main__':
         log.debug(f'Charging: {charging}')
         log.debug(f'Battery usage strategy: {bat_strategy}')
 
-        power_sources = {ps: ps.get_max_power(c, pv_power, total_load, bat_strategy) for ps in ChargingPowerSource}
+        power_sources = {ps: ps.get_max_power(c, pv_power, total_load, battery_load, bat_strategy) for ps in ChargingPowerSource}
         for ps, ps_max_power in power_sources.items():
             log.debug(f'Max power with {ps.name}: {ps_max_power}w')
 
@@ -382,9 +423,20 @@ if __name__ == '__main__':
         if charging_plan == ChargingPlan.Manual:
             log.debug('Charging plan is manual')
             time.sleep(c.poll_interval)
+            was_manual = True
             continue
 
-        plans = [ChargingPlan.SolarOnly, ChargingPlan.MinPlusSolar, ChargingPlan.Nightly, ChargingPlan.MinBatteryLoad, ChargingPlan.MaxSpeed]
+        if remembered_charging_enabled != charging or remembered_charging_amps != charging_amps and not was_manual:
+            log.info('Switching to manual mode')
+            remembered_charging_enabled = charging
+            remembered_charging_amps = charging_amps
+            api.set_charging_plan(ChargingPlan.Manual)
+            time.sleep(c.poll_interval)
+            was_manual = True
+            continue
+
+        was_manual = False
+        plans = [ChargingPlan.SolarOnly, ChargingPlan.MinPlusSolar, ChargingPlan.Nightly, ChargingPlan.SolarPlusNightly, ChargingPlan.MinBatteryLoad, ChargingPlan.MaxSpeed]
         target_charging_amps = 0
         for plan in plans:
             target_amps = calculate_charging_amps(c, plan, power_sources[plan.get_power_source()], car_soc, charging_limit)
@@ -400,6 +452,7 @@ if __name__ == '__main__':
             if charging:
                 log.info('Stop charging because of charging plan')
                 api.set_charging(False)
+                remembered_charging_enabled = False
                 time.sleep(c.poll_interval)
                 continue
             else:
@@ -409,12 +462,15 @@ if __name__ == '__main__':
         else:
             if not charging:
                 log.info('Start charging because of charging plan')
-                api.set_charging(True)
                 api.set_charging_amps(target_charging_amps)
+                api.set_charging(True)
+                remembered_charging_enabled = True
+                remembered_charging_amps = target_charging_amps
                 time.sleep(c.poll_interval)
                 continue
             else:
                 if target_charging_amps != charging_amps:
                     log.info(f'Set charging amps to {target_charging_amps}A')
                     api.set_charging_amps(target_charging_amps)
+                    remembered_charging_amps = target_charging_amps
         time.sleep(c.poll_interval)

@@ -4,17 +4,18 @@ api:
   entities:
     switch_set_charging: switch.tesla_model_y_charger
     number_set_charging_amps: number.tesla_model_y_charging_current
+    input_select_charging_plan: input_select.tesla_model_y_charging_plan
   templates:
     charging_amps: '{{ states("number.tesla_model_y_charging_current") }}'
     charging_limit: '{{ states("sensor.tesla_model_y_charging_limit_last_known") }}'
     charging_plan: '{{ states("input_select.tesla_model_y_charging_plan") }}'
     inverter_soc: '{{ states("sensor.deye_inverter_mqtt_battery_soc") }}'
     car_soc: '{{ states("sensor.tesla_model_y_battery_level_last_known") }}'
+    battery_load: '{{ states("sensor.deye_inverter_mqtt_battery_power") }}'
     total_load: >-
       {{ states("sensor.deye_inverter_mqtt_essential_power_computed")|float +
          states("sensor.heat_pump_current_power_consumption")|float +
-         states("sensor.smart_plug_19bd1d_bl0942_power")|float +
-         states("sensor.deye_inverter_mqtt_battery_power")|float }}
+         states("sensor.smart_plug_19bd1d_bl0942_power")|float }}
     grid_power: '{{ states("sensor.solaredge_i1_m1_ac_power") }}'
     pv_power: '{{ states("sensor.solar_power_computed") }}'
     charger_connected: '{{ states("binary_sensor.tesla_model_y_charge_cable_last_known") }}'

@@ -10,12 +10,14 @@ class Config:
 
         self.set_charging_entity_id = config['api']['entities']['switch_set_charging']
         self.set_charging_amps_entity_id = config['api']['entities']['number_set_charging_amps']
+        self.charging_plan_entity_id = config['api']['entities']['input_select_charging_plan']
 
         self.charging_amps_template = config['api']['templates']['charging_amps']
         self.charging_limit_template = config['api']['templates']['charging_limit']
         self.charging_plan_template = config['api']['templates']['charging_plan']
         self.inverter_soc_template = config['api']['templates']['inverter_soc']
         self.car_soc_template = config['api']['templates']['car_soc']
+        self.battery_load_template = config['api']['templates']['battery_load']
         self.total_load_template = config['api']['templates']['total_load']
         self.grid_power_template = config['api']['templates']['grid_power']
         self.pv_power_template = config['api']['templates']['pv_power']
