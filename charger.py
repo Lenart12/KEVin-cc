@@ -360,15 +360,15 @@ def main(c: Config, api: WigaunApi):
         for ps, ps_max_power in power_sources.items():
             log.debug(f'Max power with {ps.name}: {ps_max_power}w')
 
-        charging_amps = {}
+        all_charging_amps = {}
         for plan in [p for p in ChargingPlan]:
             target_amps = calculate_charging_amps(c, plan, power_sources[plan.get_power_source()], car_soc, charging_limit)
             target_power = target_amps * c.volts * c.phases * c.charge_efficiency_factor
             log.debug(f'Calculated charging amps for {plan.name}: {target_amps}A -> {target_power}W')
             log.debug(f'Probable load for {plan.name}: {total_load + target_power}W')
-            charging_amps[plan] = target_amps
+            all_charging_amps[plan] = target_amps
 
-        target_charging_amps = charging_amps[charging_plan]
+        target_charging_amps = all_charging_amps[charging_plan]
         log.debug(f'Target charging amps: {target_charging_amps}A -> {target_charging_amps * c.volts * c.phases * c.charge_efficiency_factor}W')
 
         # 1. Check if the charger is connected before doing anything
@@ -386,12 +386,12 @@ def main(c: Config, api: WigaunApi):
 
         # 3. If values have changed unexpectedly, switch to manual mode
         if remembered_charging_enabled != charging or remembered_charging_amps != charging_amps and not was_manual:
-            remembered_charging_enabled = charging
-            remembered_charging_amps = charging_amps
-
             log.debug('Values have changed unexpectedly')
             log.debug(f'Charging enabled: {remembered_charging_enabled}->{charging}')
             log.debug(f'Charging amps: {remembered_charging_amps}->{charging_amps}')
+
+            remembered_charging_enabled = charging
+            remembered_charging_amps = target_charging_amps
 
             if not charging:
                 # Wait to see if the charger is disconnected
