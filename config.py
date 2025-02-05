@@ -26,6 +26,7 @@ class Config:
         self.set_charging_amps_entity_id = self._get('api', 'entities', 'number_set_charging_amps')
         self.charging_plan_entity_id = self._get('api', 'entities', 'input_select_charging_plan')
 
+        self.top_up_limit_template = self._get('api', 'templates', 'top_up_limit')
         self.charging_amps_template = self._get('api', 'templates', 'charging_amps')
         self.charging_limit_template = self._get('api', 'templates', 'charging_limit')
         self.charging_plan_template = self._get('api', 'templates', 'charging_plan')

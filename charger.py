@@ -194,6 +194,12 @@ class WigaunApi(HomeassistantApi):
         """
         return self.action('input_select', 'select_option', {'entity_id': self.c.charging_plan_entity_id, 'option': plan.value})
 
+    def get_top_up_limit(self) -> int:
+        """
+        Get the top up limit
+        """
+        return int(self.template(self.c.top_up_limit_template))
+
     def get_charging_amps(self) -> int:
         """
         Get the charging amps
@@ -383,6 +389,7 @@ if __name__ == '__main__':
             charging_amps = api.get_charging_amps()
             charging_limit = api.get_charging_limit()
             charging_plan = api.get_charging_plan()
+            top_up_limit = api.get_top_up_limit()
             inverter_soc = api.get_inverter_soc()
             car_soc = api.get_car_soc()
             battery_load = api.get_battery_load()
@@ -401,6 +408,7 @@ if __name__ == '__main__':
         log.debug(f'Charging amps: {charging_amps}A')
         log.debug(f'Charging limit: {charging_limit}%')
         log.debug(f'Charging plan: {charging_plan}')
+        log.debug(f'Top up limit: {top_up_limit}%')
         log.debug(f'Inverter SOC: {inverter_soc}%')
         log.debug(f'Car SOC: {car_soc}%')
         log.debug(f'Battery load: {battery_load}w')
@@ -461,6 +469,10 @@ if __name__ == '__main__':
                 continue
         else:
             if not charging:
+                if car_soc > top_up_limit:
+                    log.debug('Will not charge because car is full enough')
+                    time.sleep(c.poll_interval)
+                    continue
                 log.info('Start charging because of charging plan')
                 api.set_charging_amps(target_charging_amps)
                 api.set_charging(True)
