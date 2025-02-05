@@ -389,6 +389,10 @@ def main(c: Config, api: WigaunApi):
             remembered_charging_enabled = charging
             remembered_charging_amps = charging_amps
 
+            log.debug('Values have changed unexpectedly')
+            log.debug(f'Charging enabled: {remembered_charging_enabled}->{charging}')
+            log.debug(f'Charging amps: {remembered_charging_amps}->{charging_amps}')
+
             if not charging:
                 # Wait to see if the charger is disconnected
                 log.debug('Waiting to see if the charger will be disconnected')
@@ -418,7 +422,7 @@ def main(c: Config, api: WigaunApi):
                 time.sleep(c.poll_interval)
                 continue
             else:
-                log.info('No charging needed')
+                log.debug('No charging needed')
                 time.sleep(c.poll_interval)
                 continue
         else:
