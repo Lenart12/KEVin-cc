@@ -62,11 +62,3 @@ class Config:
         self.battery_soc_peak_shaving_minimal = self._get('battery', 'peak_shaving_minimal', 'soc')
         self.battery_power_peak_shaving_minimal = self._get('battery', 'peak_shaving_minimal', 'max_power')
         self.battery_power_peak_shaving = self._get('battery', 'peak_shaving', 'max_power')
-
-        self.mqtt_host = self._get('mqtt', 'host')
-        self.mqtt_port = self._get('mqtt', 'port')
-        self.mqtt_user = self._get('mqtt', 'username')
-        self.mqtt_pass = self._get('mqtt', 'password')
-        self.mqtt_discovery_topic = self._get('mqtt', 'discovery_topic')
-        self.mqtt_discovery = self._get('mqtt', 'discovery')
-        self.mqtt_availability_topic = self._get('mqtt', 'discovery', 'availability_topic')

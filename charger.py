@@ -138,6 +138,12 @@ class HomeassistantApi:
         response = self.client.post(url, headers=headers, json=data)
         response.raise_for_status()
         return response.text
+    
+    def notification(self, title: str, message: str):
+        """
+        Send a notification
+        """
+        return self.action('notify', 'notify', {'message': message, 'title': title})
 
 class WigaunApi(HomeassistantApi):
     def __init__(self, c: Config):
@@ -383,8 +389,9 @@ def main(c: Config, api: WigaunApi):
             remembered_charging_enabled = charging
             remembered_charging_amps = charging_amps
             api.set_charging_plan(ChargingPlan.Manual)
-            time.sleep(c.poll_interval)
+            api.notification('KEVin', 'Nastavljeno na ročno polnjenje')
             was_manual = True
+            time.sleep(c.poll_interval)
             continue
 
         was_manual = False
@@ -396,6 +403,7 @@ def main(c: Config, api: WigaunApi):
                 log.info('Stop charging because of charging plan')
                 api.set_charging(False)
                 remembered_charging_enabled = False
+                api.notification('KEVin', 'Polnjenje končano')
                 time.sleep(c.poll_interval)
                 continue
             else:
@@ -414,6 +422,7 @@ def main(c: Config, api: WigaunApi):
                 api.set_charging(True)
                 remembered_charging_enabled = True
                 remembered_charging_amps = target_charging_amps
+                api.notification('KEVin', 'Začetek polnjenja')
                 time.sleep(c.poll_interval)
                 continue
             else:
@@ -446,4 +455,5 @@ if __name__ == '__main__':
             log.error(f'Error in charger controller: {e}')
             time.sleep(60)
             log.info('Restarting charger controller')
+            api.notification('KEVin', 'Krmilnik se je sesul')
             continue
