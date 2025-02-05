@@ -178,15 +178,13 @@ class WigaunApi(HomeassistantApi):
         """
         Get the charging amps
         """
-        amps = self.template(self.c.charging_amps_template)
-        return int(amps) if amps not in ['unavailable', 'unknown'] else 0
+        return int(self.template(self.c.charging_amps_template))
 
     def get_charging_limit(self) -> int:
         """
         Get the charging limit
         """
-        limit = self.template(self.c.charging_limit_template)
-        return int(limit) if limit not in ['unavailable', 'unknown'] else 0
+        return int(self.template(self.c.charging_limit_template))
 
     def get_battery_load(self) -> float:
         """
@@ -208,15 +206,13 @@ class WigaunApi(HomeassistantApi):
         """
         Get the car state of charge
         """
-        soc = self.template(self.c.car_soc_template)
-        return float(soc) if soc not in ['unavailable', 'unknown'] else math.nan
+        return float(self.template(self.c.car_soc_template))
 
     def get_inverter_soc(self) -> float:
         """
         Get the inverter state of charge
         """
-        soc = self.template(self.c.inverter_soc_template)
-        return float(soc) if soc not in ['unavailable', 'unknown'] else 0
+        return float(self.template(self.c.inverter_soc_template))
 
     def get_total_load(self) -> float:
         """
@@ -339,6 +335,11 @@ def main(c: Config, api: WigaunApi):
             pv_power = api.get_pv_power()
             charger_connected = api.get_charger_connected()
             charging = api.get_is_charging()
+        except ValueError as e:
+            log.error(f'Failed to convert data: {e}')
+            log.error(traceback.format_exc())
+            time.sleep(c.poll_interval)
+            continue
         except httpx.HTTPError as e:
             log.error(f'Error getting data: {e}')
             time.sleep(c.poll_interval)
