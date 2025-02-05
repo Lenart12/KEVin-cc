@@ -438,6 +438,7 @@ def main(c: Config, api: WigaunApi):
                     time.sleep(c.poll_interval)
                     continue
                 log.info('Start charging because of charging plan')
+                log.info(f'Set charging amps to {target_charging_amps}A')
                 api.set_charging_amps(target_charging_amps)
                 api.set_charging(True)
                 remembered_charging_enabled = True
