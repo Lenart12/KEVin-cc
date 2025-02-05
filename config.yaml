@@ -6,7 +6,7 @@ api:
     number_set_charging_amps: number.tesla_model_y_charging_current
     input_select_charging_plan: input_select.tesla_model_y_charging_plan
   templates:
-    top_up_limit: '{{ states("sensor.tesla_model_y_top_up_limit") }}'
+    top_up_limit: '{{ states("input_number.tesla_model_y_top_up_limit") }}'
     charging_amps: '{{ states("number.tesla_model_y_charging_current") }}'
     charging_limit: '{{ states("sensor.tesla_model_y_charging_limit_last_known") }}'
     charging_plan: '{{ states("input_select.tesla_model_y_charging_plan") }}'

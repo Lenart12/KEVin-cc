@@ -1,6 +1,7 @@
 import enum
 import math
 import time
+import traceback
 import httpx
 from config import Config
 import logging
@@ -171,7 +172,7 @@ class WigaunApi(HomeassistantApi):
         """
         Get the top up limit
         """
-        return int(self.template(self.c.top_up_limit_template))
+        return int(float(self.template(self.c.top_up_limit_template)))
 
     def get_charging_amps(self) -> int:
         """
@@ -453,6 +454,7 @@ if __name__ == '__main__':
             break
         except Exception as e:
             log.error(f'Error in charger controller: {e}')
+            log.error(traceback.format_exc())
             time.sleep(60)
             log.info('Restarting charger controller')
             api.notification('KEVin', 'Krmilnik se je sesul')
