@@ -22,7 +22,8 @@ api:
     charger_connected: '{{ states("binary_sensor.tesla_model_y_charge_cable_last_known") }}'
     is_charging: '{{ states("switch.tesla_model_y_charger") }}'
 
-charger:  
+charger:
+  log_level: INFO
   min_amps: 5
   max_amps: 16
   min_power: 3450 # 3 phases * 230V * 5A

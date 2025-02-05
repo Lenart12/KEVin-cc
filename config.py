@@ -19,6 +19,8 @@ class Config:
         with open(secrets_fn, 'r') as f:
             self._config['_secrets'] = yaml.safe_load(f)['secrets']
 
+        self.log_level = self._get('charger', 'log_level')
+
         self.api_url = self._get('api', 'url')
         self.api_token = self._get('api', 'token')
 

@@ -248,13 +248,16 @@ def calculate_charging_amps(c: Config, plan: ChargingPlan, max_power: float, cur
         log.info('Car is full')
         return 0
 
+    # Check if there is enough power to charge
     if max_power < c.min_power * c.charge_efficiency_factor:
         log.warning(f'Not enough power to charge with {max_power}W')
         return 0
 
+    # Round down the maximum power to the nearest amp 
     step = c.phases * c.volts * c.charge_efficiency_factor
     max_amps = math.floor(max_power / step) # Round down to the nearest step
 
+    # Check if there is enough power to charge with the minimum amps
     if max_amps < c.min_amps:
         log.warning(f'Not enough power to charge with {max_amps}A')
         return 0
@@ -267,19 +270,12 @@ def calculate_charging_amps(c: Config, plan: ChargingPlan, max_power: float, cur
         if plan == ChargingPlan.SolarPlusNightly:
             plan = ChargingPlan.Nightly if is_night else ChargingPlan.SolarOnly
 
-    # Process the plan
-    if plan == ChargingPlan.Manual:
-        return 0
-    if plan == ChargingPlan.SolarOnly:
-        if max_amps < c.min_amps:
-            log.warning('Not enough power to charge on solar only')
-            return 0
-        return min(max_amps, c.max_amps)
+    # Process the plan    
     if plan == ChargingPlan.Nightly:
         if not is_night:
             log.debug('Not night')
             return 0
-
+        
         # Calculate the power needed to charge the car to the limit
         remaining_capacity_wh = c.vehicle_battery_capacity * (limit_soc - current_soc) / 100
         remaining_time_h = remaining_time_s / 3600
@@ -300,22 +296,15 @@ def calculate_charging_amps(c: Config, plan: ChargingPlan, max_power: float, cur
             return max_amps
 
         return amps_plan
-    if plan in [ChargingPlan.MinPlusSolar, ChargingPlan.MinBatteryLoad, ChargingPlan.MaxSpeed]:
+    # Remaining plans - use the maximum amps that its power source can provide
+    if plan in [ChargingPlan.Manual, ChargingPlan.SolarOnly, ChargingPlan.MinPlusSolar, ChargingPlan.MinBatteryLoad, ChargingPlan.MaxSpeed]:
         return min(max_amps, c.max_amps)
 
+    log.warning('Unknown charging plan')
     return 0
 
-def main():
-    logging.basicConfig(level=logging.DEBUG, format='%(asctime)s - %(levelname)s:%(name)s:%(message)s')
-    logging.getLogger('httpcore.http11').setLevel(logging.WARNING)
-    if log.getEffectiveLevel() == logging.DEBUG:
-        logging.getLogger('httpx').setLevel(logging.INFO)
-    else:
-        logging.getLogger('httpx').setLevel(logging.WARNING)
-
+def main(c: Config, api: WigaunApi):
     log.info("Starting charger controller")
-    c = Config()
-    api = WigaunApi(c)
 
     # Remember the state of the charger to detect when
     # to switch to manual mode
@@ -359,21 +348,36 @@ def main():
         log.debug(f'Charging: {charging}')
         log.debug(f'Battery usage strategy: {bat_strategy}')
 
+        # Calculate the possible power sources
         power_sources = {ps: ps.get_max_power(c, pv_power, total_load, battery_load, bat_strategy) for ps in ChargingPowerSource}
         for ps, ps_max_power in power_sources.items():
             log.debug(f'Max power with {ps.name}: {ps_max_power}w')
 
+        charging_amps = {}
+        for plan in [p for p in ChargingPlan if p != ChargingPlan.Manual]:
+            target_amps = calculate_charging_amps(c, plan, power_sources[plan.get_power_source()], car_soc, charging_limit)
+            target_power = target_amps * c.volts * c.phases * c.charge_efficiency_factor
+            log.debug(f'Calculated charging amps for {plan.name}: {target_amps}A -> {target_power}W')
+            log.debug(f'Probable load for {plan.name}: {total_load + target_power}W')
+            charging_amps[plan] = target_amps
+
+        target_charging_amps = charging_amps[charging_plan]
+        log.debug(f'Target charging amps: {target_charging_amps}A -> {target_charging_amps * c.volts * c.phases * c.charge_efficiency_factor}W')
+
+        # 1. Check if the charger is connected before doing anything
         if not charger_connected:
             log.debug('Charger not connected')
             time.sleep(c.poll_interval)
             continue
 
+        # 2. Check if the charger is in manual mode
         if charging_plan == ChargingPlan.Manual:
             log.debug('Charging plan is manual')
             time.sleep(c.poll_interval)
             was_manual = True
             continue
 
+        # 3. If values have changed unexpectedly, switch to manual mode
         if remembered_charging_enabled != charging or remembered_charging_amps != charging_amps and not was_manual:
             log.info('Switching to manual mode')
             remembered_charging_enabled = charging
@@ -384,19 +388,10 @@ def main():
             continue
 
         was_manual = False
-        plans = [ChargingPlan.SolarOnly, ChargingPlan.MinPlusSolar, ChargingPlan.Nightly, ChargingPlan.SolarPlusNightly, ChargingPlan.MinBatteryLoad, ChargingPlan.MaxSpeed]
-        target_charging_amps = 0
-        for plan in plans:
-            target_amps = calculate_charging_amps(c, plan, power_sources[plan.get_power_source()], car_soc, charging_limit)
-            target_power = target_amps * c.volts * c.phases * c.charge_efficiency_factor
-            log.debug(f'Calculated charging amps for {plan.name}: {target_amps}A -> {target_power}W')
-            log.debug(f'Probable load for {plan.name}: {total_load + target_power}W')
-            if plan == charging_plan:
-                target_charging_amps = target_amps
 
-        log.debug(f'Target charging amps: {target_charging_amps}A -> {target_charging_amps * c.volts * c.phases * c.charge_efficiency_factor}W')
-
+        # 4. Set the charging plan (if needed)
         if target_charging_amps == 0:
+            # Stop charging
             if charging:
                 log.info('Stop charging because of charging plan')
                 api.set_charging(False)
@@ -408,6 +403,7 @@ def main():
                 time.sleep(c.poll_interval)
                 continue
         else:
+            # Start charging
             if not charging:
                 if car_soc > top_up_limit:
                     log.debug('Will not charge because car is full enough')
@@ -421,6 +417,7 @@ def main():
                 time.sleep(c.poll_interval)
                 continue
             else:
+                # Check if the charging amps need to be adjusted
                 if target_charging_amps != charging_amps:
                     log.info(f'Set charging amps to {target_charging_amps}A')
                     api.set_charging_amps(target_charging_amps)
@@ -428,4 +425,25 @@ def main():
         time.sleep(c.poll_interval)
 
 if __name__ == '__main__':
-    main()
+    c = Config()
+    api = WigaunApi(c)
+    # Set up logging
+    logging.basicConfig(level=c.log_level, format='%(asctime)s - %(levelname)s:%(name)s:%(message)s')
+    logging.getLogger('httpcore.http11').setLevel(logging.WARNING)
+    if log.getEffectiveLevel() == logging.DEBUG:
+        logging.getLogger('httpx').setLevel(logging.INFO)
+    else:
+        logging.getLogger('httpx').setLevel(logging.WARNING)
+    
+    # Run the main loop
+    while True:
+        try:
+            main(c, api)
+        except KeyboardInterrupt:
+            log.info('Stopping charger controller')
+            break
+        except Exception as e:
+            log.error(f'Error in charger controller: {e}')
+            time.sleep(60)
+            log.info('Restarting charger controller')
+            continue
