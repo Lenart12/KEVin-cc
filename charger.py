@@ -252,6 +252,10 @@ def calculate_charging_amps(c: Config, plan: ChargingPlan, max_power: float, cur
     """
     Get the charging power
     """
+    if math.isnan(current_soc):
+        log.warning('Car state of charge is not available')
+        return 0
+
     if current_soc >= limit_soc:
         log.info('Car is full')
         return 0
