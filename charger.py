@@ -441,6 +441,8 @@ def main(c: Config, api: WigaunApi):
 
         # 3. If values have changed unexpectedly, switch to manual mode
         if remembered_charging_enabled != charging or remembered_charging_amps != charging_amps and not was_manual:
+            charging_changed = remembered_charging_enabled != charging
+            charging_amps_changed = remembered_charging_amps != charging_amps
             log.debug('Values have changed unexpectedly')
             log.debug(f'Charging enabled: {remembered_charging_enabled}->{charging}')
             log.debug(f'Charging amps: {remembered_charging_amps}->{charging_amps}')
@@ -448,7 +450,7 @@ def main(c: Config, api: WigaunApi):
             remembered_charging_enabled = charging
             remembered_charging_amps = target_charging_amps
 
-            if remembered_charging_enabled != charging and not charging:
+            if charging_changed and not charging:
                 # Wait to see if the charger is disconnected
                 log.debug('Waiting to see if the charger will be disconnected')
                 time.sleep(c.poll_interval)            
@@ -457,7 +459,7 @@ def main(c: Config, api: WigaunApi):
                     time.sleep(c.poll_interval)
                     continue
 
-            if remembered_charging_amps != charging_amps and not charging:
+            if charging_amps_changed and not charging:
                 # Dont care about the charging amps if the charger is not charging
                 log.debug('Charge amps changed while not charging, ignoring')
                 time.sleep(c.poll_interval)
