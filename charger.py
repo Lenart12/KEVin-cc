@@ -5,6 +5,7 @@ import traceback
 import httpx
 from config import Config
 import logging
+import metrics
 
 log = logging.getLogger('charger')
 
@@ -373,16 +374,57 @@ def main(c: Config, api: WigaunApi):
         for ps, ps_max_power in power_sources.items():
             log.debug(f'Max power with {ps.name}: {ps_max_power}w')
 
+        target_power_factor = c.volts * c.phases * c.charge_efficiency_factor
         all_charging_amps = {}
         for plan in [p for p in ChargingPlan]:
             target_amps = calculate_charging_amps(c, plan, power_sources[plan.get_power_source()], car_soc, charging_limit)
-            target_power = target_amps * c.volts * c.phases * c.charge_efficiency_factor
+            target_power = target_amps * target_power_factor
             log.debug(f'Calculated charging amps for {plan.name}: {target_amps}A -> {target_power}W')
             log.debug(f'Probable load for {plan.name}: {total_load + target_power}W')
             all_charging_amps[plan] = target_amps
 
         target_charging_amps = all_charging_amps[charging_plan]
-        log.debug(f'Target charging amps: {target_charging_amps}A -> {target_charging_amps * c.volts * c.phases * c.charge_efficiency_factor}W')
+        target_charging_power = target_charging_amps * target_power_factor
+        log.debug(f'Target charging amps: {target_charging_amps}A -> {target_charging_power}W')
+
+        # (0). Save metrics
+        metrics.save_charger_metrics(metrics_db, {
+            'charging_amps': charging_amps,
+            'charging_limit': charging_limit,
+            'charging_plan': charging_plan.value,
+            'top_up_limit': top_up_limit,
+            'inverter_soc': inverter_soc,
+            'car_soc': car_soc,
+            'battery_load': battery_load,
+            'total_load': total_load,
+            'grid_power': grid_power,
+            'pv_power': pv_power,
+            'charger_connected': charger_connected,
+            'charging': charging,
+            'usage_strategy': bat_strategy.value,
+            'max_power_no_charging': power_sources[ChargingPowerSource.NoCharing],
+            'max_power_solar_only': power_sources[ChargingPowerSource.SolarOnly],
+            'max_power_min_plus_solar': power_sources[ChargingPowerSource.MinPlusSolar],
+            'max_power_min_bat_load': power_sources[ChargingPowerSource.MinBatteryLoad],
+            'max_power_full': power_sources[ChargingPowerSource.Full],
+            'plan_manual_amps': all_charging_amps[ChargingPlan.Manual],
+            'plan_manual_power': all_charging_amps[ChargingPlan.Manual] * target_power_factor,
+            'plan_solar_only_amps': all_charging_amps[ChargingPlan.SolarOnly],
+            'plan_solar_only_power': all_charging_amps[ChargingPlan.SolarOnly] * target_power_factor,
+            'plan_min_plus_solar_amps': all_charging_amps[ChargingPlan.MinPlusSolar],
+            'plan_min_plus_solar_power': all_charging_amps[ChargingPlan.MinPlusSolar] * target_power_factor,
+            'plan_nightly_amps': all_charging_amps[ChargingPlan.Nightly],
+            'plan_nightly_power': all_charging_amps[ChargingPlan.Nightly] * target_power_factor,
+            'plan_solar_plus_nightly_amps': all_charging_amps[ChargingPlan.SolarPlusNightly],
+            'plan_solar_plus_nightly_power': all_charging_amps[ChargingPlan.SolarPlusNightly] * target_power_factor,
+            'plan_min_battery_load_amps': all_charging_amps[ChargingPlan.MinBatteryLoad],
+            'plan_min_battery_load_power': all_charging_amps[ChargingPlan.MinBatteryLoad] * target_power_factor,
+            'plan_max_speed_amps': all_charging_amps[ChargingPlan.MaxSpeed],
+            'plan_max_speed_power': all_charging_amps[ChargingPlan.MaxSpeed] * target_power_factor,
+            'target_charging_amps': target_charging_amps,
+            'target_charging_power': target_charging_power,
+        })
+
 
         # 1. Check if the charger is connected before doing anything
         if not charger_connected:
@@ -465,6 +507,14 @@ def main(c: Config, api: WigaunApi):
 if __name__ == '__main__':
     c = Config()
     api = WigaunApi(c)
+    metrics_db = metrics.get_db_connection()
+    if not metrics:
+        log.error('Failed to connect to metrics database')
+        exit(1)
+    if not metrics.create_charger_metrics_table(metrics_db):
+        log.error('Failed to create charger metrics table')
+        exit(1)
+    
     # Set up logging
     logging.basicConfig(level=c.log_level, format='%(asctime)s - %(levelname)s:%(name)s:%(message)s')
     logging.getLogger('httpcore.http11').setLevel(logging.WARNING)
@@ -487,3 +537,8 @@ if __name__ == '__main__':
             log.info('Restarting charger controller')
             api.notification('KEVin', 'Krmilnik se je sesul')
             continue
+        finally:
+            metrics_db.close()
+            api.client.close()
+            log.info('Stopped charger controller')
+            break
