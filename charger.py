@@ -181,7 +181,7 @@ class WigaunApi(HomeassistantApi):
         try:
             return int(self.template(self.c.charging_amps_template))
         except ValueError:
-            log.warning('Charging amps not available')
+            log.debug('Charging amps not available')
             return 0
 
     def get_charging_limit(self) -> int:
