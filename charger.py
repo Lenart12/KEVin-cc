@@ -284,12 +284,15 @@ def calculate_charging_amps(c: Config, plan: ChargingPlan, max_power: float, cur
             log.debug('Not night')
             return 0
         
+        # Car is still not charged, switch to max speed to continue charging
+        if remaining_time_s < 1.2 * c.poll_interval:
+            api.set_charging_plan(ChargingPlan.MaxSpeed)
+            log.info('Switching to max speed to finish charging')
+            return max_amps
+        
         # Calculate the power needed to charge the car to the limit
         remaining_capacity_wh = c.vehicle_battery_capacity * (limit_soc - current_soc) / 100
         remaining_time_h = remaining_time_s / 3600
-        if remaining_time_h == 0:
-            log.debug('Not enough time to charge')
-            return 0
         required_amps = remaining_capacity_wh / (remaining_time_h * c.volts * c.phases)
         log.debug(f'Remaining capacity: {remaining_capacity_wh:.2f}Wh Remaining time: {remaining_time_h:.2f}h Required amps: {required_amps:.2f}A')
 
