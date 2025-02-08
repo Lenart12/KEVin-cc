@@ -448,7 +448,7 @@ def main(c: Config, api: WigaunApi):
             log.debug(f'Charging amps: {remembered_charging_amps}->{charging_amps}')
 
             remembered_charging_enabled = charging
-            remembered_charging_amps = target_charging_amps
+            remembered_charging_amps = charging_amps
 
             if charging_changed and not charging:
                 # Wait to see if the charger is disconnected
