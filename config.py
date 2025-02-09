@@ -55,6 +55,7 @@ class Config:
             return t.hour * 3600 + t.minute * 60
         self.nightly_start = time_to_seconds(self._get('charger', 'nightly', 'start'))
         self.nightly_end = time_to_seconds(self._get('charger', 'nightly', 'end'))
+        self.tesla_schedule_start = time_to_seconds(self._get('charger', 'tesla_schedule', 'start'))
 
         self.battery_soc_no_charging = self._get('battery', 'no_charging', 'soc')
         self.battery_soc_reserve = self._get('battery', 'reserve', 'soc')

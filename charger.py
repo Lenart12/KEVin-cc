@@ -77,6 +77,30 @@ def get_nightly_time(c: Config) -> tuple[bool, int]:
     remaining_time_s = time_end - time_now
     return True, remaining_time_s
 
+def is_scheduled_charging_time(c: Config) -> bool:
+    """
+    Check if it is the scheduled charging time
+    """
+    time_local = time.localtime()
+    time_now = time_local.tm_hour * 3600 + time_local.tm_min * 60 + time_local.tm_sec
+    
+    time_start = c.tesla_schedule_start
+    time_end = time_start + 6 * 3600 # Scheduled charging start is active for 6 hours
+    
+    # Handle time window wrapping around midnight
+    if time_end > 24 * 3600:
+        # If window wraps around midnight, check if current time is before adjusted end time
+        # or after start time
+        time_end = time_end % (24 * 3600)
+        if time_start <= time_now or time_now <= time_end:
+            return True
+    else:
+        # Normal case - check if current time is within window
+        if time_start <= time_now <= time_end:
+            return True
+    
+    return False
+
 class ChargingPlan(enum.Enum):
     Manual = 'Manual' # Charging not managed by the controller
     SolarOnly = 'Solar only' # Only as much as possible when there is solar power
@@ -319,6 +343,49 @@ def calculate_charging_amps(c: Config, plan: ChargingPlan, max_power: float, cur
     log.warning('Unknown charging plan')
     return 0
 
+class UnexpectedChangeResult(enum.Enum):
+    Expected = 'Expected'  # Change was expected, continue normal operation
+    Disconnected = 'Disconnected'  # Charger was disconnected, go back to polling
+    Scheduled = 'Scheduled'  # Change was due to scheduled charging, continue normal operation
+    Ignored = 'Ignored'  # Change can be ignored, continue normal operation
+    Manual = 'Manual'  # Unexpected change, switch to manual mode
+
+def handle_unexpected_charging_change(c: Config, charging: bool, charging_amps: int, 
+                                   remembered_charging_enabled: bool, remembered_charging_amps: int) -> UnexpectedChangeResult:
+    """
+    Handle unexpected charging changes.
+    Returns the result indicating what action should be taken.
+    """
+    if remembered_charging_enabled == charging and remembered_charging_amps == charging_amps:
+        return UnexpectedChangeResult.Expected
+
+    charging_changed = remembered_charging_enabled != charging
+    charging_amps_changed = remembered_charging_amps != charging_amps
+    log.debug('Values have changed unexpectedly')
+    log.debug(f'Charging enabled: {remembered_charging_enabled}->{charging}')
+    log.debug(f'Charging amps: {remembered_charging_amps}->{charging_amps}')
+
+    # Charging stopped unexpectedly, wait to see if the charger will be disconnected
+    if charging_changed and not charging:
+        log.debug('Waiting to see if the charger will be disconnected')
+        time.sleep(c.poll_interval)            
+        if not api.get_charger_connected():
+            log.info('Charger disconnected')
+            return UnexpectedChangeResult.Disconnected
+
+    # Check if unexpected charging start was due to scheduled charging
+    if charging_changed and charging and is_scheduled_charging_time(c):
+        log.info('Charging started during scheduled charging time')
+        return UnexpectedChangeResult.Scheduled
+
+    # Dont care about the charging amps if the charger is not charging
+    if charging_amps_changed and not charging:
+        log.debug('Charge amps changed while not charging, ignoring')
+        return UnexpectedChangeResult.Ignored
+
+    # Something unexpected happened, switch to manual mode
+    return UnexpectedChangeResult.Manual
+
 def main(c: Config, api: WigaunApi):
     log.info("Starting charger controller")
 
@@ -439,39 +506,30 @@ def main(c: Config, api: WigaunApi):
             was_manual = True
             continue
 
-        # 3. If values have changed unexpectedly, switch to manual mode
-        if remembered_charging_enabled != charging or remembered_charging_amps != charging_amps and not was_manual:
-            charging_changed = remembered_charging_enabled != charging
-            charging_amps_changed = remembered_charging_amps != charging_amps
-            log.debug('Values have changed unexpectedly')
-            log.debug(f'Charging enabled: {remembered_charging_enabled}->{charging}')
-            log.debug(f'Charging amps: {remembered_charging_amps}->{charging_amps}')
-
+        # 3. If values have changed unexpectedly, handle the change
+        if not was_manual:
+            result = handle_unexpected_charging_change(
+                c, api, charging, charging_amps, remembered_charging_enabled, remembered_charging_amps)
+            
             remembered_charging_enabled = charging
             remembered_charging_amps = charging_amps
-
-            if charging_changed and not charging:
-                # Wait to see if the charger is disconnected
-                log.debug('Waiting to see if the charger will be disconnected')
-                time.sleep(c.poll_interval)            
-                if not api.get_charger_connected():
-                    log.info('Charger disconnected')
-                    time.sleep(c.poll_interval)
-                    continue
-
-            if charging_amps_changed and not charging:
-                # Dont care about the charging amps if the charger is not charging
-                log.debug('Charge amps changed while not charging, ignoring')
+            
+            # Handle the different results
+            if result == UnexpectedChangeResult.Disconnected:
                 time.sleep(c.poll_interval)
                 continue
+            elif result == UnexpectedChangeResult.Manual:
+                log.info('Switching to manual mode')
+                api.set_charging_plan(ChargingPlan.Manual)
+                api.notification('KEVin', 'Nastavljeno na ročno polnjenje')
+                was_manual = True
+                time.sleep(c.poll_interval)
+                continue
+            elif result == UnexpectedChangeResult.Scheduled:
+                log.info('Charging started during scheduled charging time')
+                api.notification('KEVin', 'Začetek polnjenja')
 
-
-            log.info('Switching to manual mode')
-            api.set_charging_plan(ChargingPlan.Manual)
-            api.notification('KEVin', 'Nastavljeno na ročno polnjenje')
-            was_manual = True
-            time.sleep(c.poll_interval)
-            continue
+            # Expected, Scheduled and Ignored cases continue normal operation
 
         was_manual = False
 

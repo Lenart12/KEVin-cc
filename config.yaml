@@ -36,7 +36,9 @@ charger:
   nightly: # HH:MM format
     start: '22:00' # Start of charging window
     end: '06:00' # End of charging window
-
+  tesla_schedule:
+    start: '22:00'
+    
 battery:
   no_charging:
     soc: 25
