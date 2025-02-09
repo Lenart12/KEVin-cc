@@ -6,6 +6,7 @@ import httpx
 from config import Config
 import logging
 import metrics
+from typing import Optional
 
 log = logging.getLogger('charger')
 
@@ -273,6 +274,24 @@ class WigaunApi(HomeassistantApi):
         """
         return self.template(self.c.is_charging_template) == 'on'
 
+class NightlyChargingState:
+    def __init__(self):
+        self.last_calc_time: float = 0
+        self.cached_amps: Optional[float] = None
+        
+    def should_recalculate(self, recalc_interval: int) -> bool:
+        return time.time() - self.last_calc_time > recalc_interval
+    
+    def update(self, amps: float):
+        self.last_calc_time = time.time()
+        self.cached_amps = amps
+    
+    def reset(self):
+        self.last_calc_time = 0
+        self.cached_amps = None
+
+nightly_state = NightlyChargingState()
+
 def calculate_charging_amps(c: Config, plan: ChargingPlan, max_power: float, current_soc: float, limit_soc: float) -> float:
     """
     Get the charging power
@@ -311,13 +330,25 @@ def calculate_charging_amps(c: Config, plan: ChargingPlan, max_power: float, cur
     if plan == ChargingPlan.Nightly:
         if not is_night:
             log.debug('Not night')
+            nightly_state.reset()  # Reset state when not night
             return 0
         
         # Car is still not charged, switch to max speed to continue charging
         if remaining_time_s < 1.2 * c.poll_interval:
             api.set_charging_plan(ChargingPlan.MaxSpeed)
             log.info('Switching to max speed to finish charging')
+            nightly_state.reset()  # Reset state when switching to max speed
             return max_amps
+
+        # Use cached amps if available and not time to recalculate
+        if not nightly_state.should_recalculate(c.nightly_recalc_interval) and nightly_state.cached_amps is not None:
+            target_amps = nightly_state.cached_amps
+            # Still respect the current max_power limit
+            if target_amps > max_amps:
+                log.warning('Not enough power to maintain cached amps')
+                return max_amps
+            log.debug(f'Using cached amps: {target_amps:.2f}A')
+            return target_amps
         
         # Calculate the power needed to charge the car to the limit
         remaining_capacity_wh = c.vehicle_battery_capacity * (limit_soc - current_soc) / 100
@@ -329,13 +360,18 @@ def calculate_charging_amps(c: Config, plan: ChargingPlan, max_power: float, cur
 
         if amps_plan < c.min_amps:
             log.debug('Charging with min amps')
-            return c.min_amps
+            amps_plan = c.min_amps
 
         if amps_plan > max_amps:
             log.warning('Not enough power to reach plan')
-            return max_amps
-
+            amps_plan = max_amps
+            
+        nightly_state.update(amps_plan)  # Cache the calculated amps
         return amps_plan
+
+    # Reset nightly state when not in nightly mode
+    nightly_state.reset()
+    
     # Remaining plans - use the maximum amps that its power source can provide
     if plan in [ChargingPlan.Manual, ChargingPlan.SolarOnly, ChargingPlan.MinPlusSolar, ChargingPlan.MinBatteryLoad, ChargingPlan.MaxSpeed]:
         return min(max_amps, c.max_amps)

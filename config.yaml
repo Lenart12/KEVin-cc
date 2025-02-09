@@ -36,6 +36,7 @@ charger:
   nightly: # HH:MM format
     start: '22:00' # Start of charging window
     end: '06:00' # End of charging window
+    recalc_interval: 1800  # 30 minutes in seconds
   tesla_schedule:
     start: '22:00'
     
