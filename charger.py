@@ -545,7 +545,7 @@ def main(c: Config, api: WigaunApi):
         # 3. If values have changed unexpectedly, handle the change
         if not was_manual:
             result = handle_unexpected_charging_change(
-                c, api, charging, charging_amps, remembered_charging_enabled, remembered_charging_amps)
+                c, charging, charging_amps, remembered_charging_enabled, remembered_charging_amps)
             
             remembered_charging_enabled = charging
             remembered_charging_amps = charging_amps
