@@ -23,7 +23,7 @@ api:
     is_charging: '{{ states("switch.tesla_model_y_charger") }}'
 
 charger:
-  log_level: INFO
+  log_level: DEBUG
   min_amps: 1
   max_amps: 16
   min_power: 690 # 3 phases * 230V * 1A 

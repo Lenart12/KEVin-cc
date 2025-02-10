@@ -10,35 +10,36 @@ from typing import Optional
 
 log = logging.getLogger('charger')
 
+_active_battery_load_strategy = None
 class BatteryLoadStrategy(enum.Enum):
     PeakShaving = 'PeakShaving'
     PeakShavingMininal = 'PeakShavingMininal'
     Reserve = 'Reserve'
     NoCharging = 'NoCharging'
 
-    _current_strategy = None
 
     def from_soc(soc: float, c: Config) -> 'BatteryLoadStrategy':
+        global _active_battery_load_strategy
         if soc < c.battery_soc_no_charging:
-            BatteryLoadStrategy._current_strategy = BatteryLoadStrategy.NoCharging
+            _active_battery_load_strategy = BatteryLoadStrategy.NoCharging
             return BatteryLoadStrategy.NoCharging
 
         # When transitioning from NoCharging to Reserve, use the base threshold
         if soc < c.battery_soc_reserve:
-            BatteryLoadStrategy._current_strategy = BatteryLoadStrategy.Reserve
+            _active_battery_load_strategy = BatteryLoadStrategy.Reserve
             return BatteryLoadStrategy.Reserve
 
         # Apply hysteresis for Reserve->PeakShavingMinimal transition
-        if BatteryLoadStrategy._current_strategy == BatteryLoadStrategy.Reserve:
+        if _active_battery_load_strategy == BatteryLoadStrategy.Reserve:
             # Need higher SOC to exit reserve mode
             if soc < (c.battery_soc_reserve + c.battery_reserve_hysteresis):
                 return BatteryLoadStrategy.Reserve
 
         if soc < c.battery_soc_peak_shaving_minimal:
-            BatteryLoadStrategy._current_strategy = BatteryLoadStrategy.PeakShavingMininal
+            _active_battery_load_strategy = BatteryLoadStrategy.PeakShavingMininal
             return BatteryLoadStrategy.PeakShavingMininal
 
-        BatteryLoadStrategy._current_strategy = BatteryLoadStrategy.PeakShaving
+        _active_battery_load_strategy = BatteryLoadStrategy.PeakShaving
         return BatteryLoadStrategy.PeakShaving
 
     def max_charing_power_with_grid(self, c: Config) -> float:
