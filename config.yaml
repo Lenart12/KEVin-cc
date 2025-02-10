@@ -48,11 +48,11 @@ battery:
     max_power: 0 
   reserve:
     soc: 30
-    max_power: 5000 # 5kW from grid
+    max_power: 8000 # 8kW from grid
     hysteresis: 5 # Exit reserve mode at 35%, enter at 30%
   peak_shaving_minimal:
     soc: 40
-    max_power: 10000 # 10kW from grid
+    max_power: 9000 # 9W from grid
   peak_shaving:
     soc: 100
     max_power: 18000 # 8kW grid + 10kW battery

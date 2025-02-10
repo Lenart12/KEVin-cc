@@ -24,6 +24,11 @@ class BatteryLoadStrategy(enum.Enum):
             _active_battery_load_strategy = BatteryLoadStrategy.NoCharging
             return BatteryLoadStrategy.NoCharging
 
+        if _active_battery_load_strategy == BatteryLoadStrategy.NoCharging:
+            # Need higher SOC to exit no charging mode
+            if soc < c.battery_power_peak_shaving_minimal:
+                return BatteryLoadStrategy.NoCharging
+
         # When transitioning from NoCharging to Reserve, use the base threshold
         if soc < c.battery_soc_reserve:
             _active_battery_load_strategy = BatteryLoadStrategy.Reserve
