@@ -24,6 +24,9 @@ api:
 
 charger:
   log_level: DEBUG
+  log_file: ./charger.log
+  log_max_size: 10485760  # 10MB in bytes
+  log_backup_count: 5
   min_amps: 1
   max_amps: 16
   min_power: 690 # 3 phases * 230V * 1A 

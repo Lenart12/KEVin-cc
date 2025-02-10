@@ -7,6 +7,8 @@ from config import Config
 import logging
 import metrics
 from typing import Optional
+import logging.handlers
+import os
 
 log = logging.getLogger('charger')
 
@@ -647,6 +649,21 @@ if __name__ == '__main__':
     
     # Set up logging
     logging.basicConfig(level=c.log_level, format='%(asctime)s - %(levelname)s:%(name)s:%(message)s')
+    
+    # Add file handler
+    if hasattr(c, 'log_file'):
+        # Ensure log directory exists
+        os.makedirs(os.path.dirname(c.log_file), exist_ok=True)
+        
+        file_handler = logging.handlers.RotatingFileHandler(
+            c.log_file,
+            maxBytes=c.log_max_size,
+            backupCount=c.log_backup_count
+        )
+        file_handler.setFormatter(logging.Formatter('%(asctime)s - %(levelname)s:%(name)s:%(message)s'))
+        file_handler.setLevel(c.log_level)
+        logging.getLogger().addHandler(file_handler)
+    
     logging.getLogger('httpcore.http11').setLevel(logging.WARNING)
     if log.getEffectiveLevel() == logging.DEBUG:
         logging.getLogger('httpx').setLevel(logging.INFO)

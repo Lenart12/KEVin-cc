@@ -20,6 +20,9 @@ class Config:
             self._config['_secrets'] = yaml.safe_load(f)['secrets']
 
         self.log_level = self._get('charger', 'log_level')
+        self.log_file = self._get('charger', 'log_file')
+        self.log_max_size = self._get('charger', 'log_max_size')
+        self.log_backup_count = self._get('charger', 'log_backup_count')
 
         self.api_url = self._get('api', 'url')
         self.api_token = self._get('api', 'token')
