@@ -380,7 +380,7 @@ def calculate_charging_amps(c: Config, plan: ChargingPlan, max_power: float, cur
         # Calculate the power needed to charge the car to the limit
         remaining_capacity_wh = c.vehicle_battery_capacity * (limit_soc - current_soc) / 100
         remaining_time_h = remaining_time_s / 3600
-        required_amps = remaining_capacity_wh / (remaining_time_h * c.volts * c.phases)
+        required_amps = remaining_capacity_wh / (remaining_time_h * c.volts * c.phases) + c.nightly_amps_offset
         log.debug(f'Remaining capacity: {remaining_capacity_wh:.2f}Wh Remaining time: {remaining_time_h:.2f}h Required amps: {required_amps:.2f}A')
 
         amps_plan = math.ceil(required_amps)
