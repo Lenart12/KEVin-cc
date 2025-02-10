@@ -50,6 +50,7 @@ class Config:
         self.volts = self._get('charger', 'volts')
         self.poll_interval = self._get('charger', 'poll_interval')
         self.charge_efficiency_factor = self._get('charger', 'charge_efficiency_factor')
+        self.min_plus_solar_min_power = self._get('charger', 'min_plus_solar', 'min_power')
         def time_to_seconds(time_str):
             t = datetime.strptime(time_str, '%H:%M')
             return t.hour * 3600 + t.minute * 60
@@ -61,6 +62,7 @@ class Config:
         self.battery_soc_no_charging = self._get('battery', 'no_charging', 'soc')
         self.battery_soc_reserve = self._get('battery', 'reserve', 'soc')
         self.battery_power_reserve = self._get('battery', 'reserve', 'max_power')
+        self.battery_reserve_hysteresis = self._get('battery', 'reserve', 'hysteresis')
         self.battery_soc_peak_shaving_minimal = self._get('battery', 'peak_shaving_minimal', 'soc')
         self.battery_power_peak_shaving_minimal = self._get('battery', 'peak_shaving_minimal', 'max_power')
         self.battery_power_peak_shaving = self._get('battery', 'peak_shaving', 'max_power')

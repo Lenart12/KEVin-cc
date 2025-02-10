@@ -24,9 +24,9 @@ api:
 
 charger:
   log_level: INFO
-  min_amps: 5
+  min_amps: 1
   max_amps: 16
-  min_power: 3450 # 3 phases * 230V * 5A
+  min_power: 690 # 3 phases * 230V * 1A 
   max_power: 11040 # 3 phases * 230V * 16A
   vehicle_battery_capacity: 57500 # 57.5kWh (Model Y LFP)
   phases: 3
@@ -39,6 +39,8 @@ charger:
     recalc_interval: 1800  # 30 minutes in seconds
   tesla_schedule:
     start: '22:00'
+  min_plus_solar:
+    min_power: 3450  # 5A charging
     
 battery:
   no_charging:
@@ -47,9 +49,10 @@ battery:
   reserve:
     soc: 30
     max_power: 5000 # 5kW from grid
+    hysteresis: 5 # Exit reserve mode at 35%, enter at 30%
   peak_shaving_minimal:
     soc: 40
-    max_power: 8000 # 8kW from grid
+    max_power: 10000 # 10kW from grid
   peak_shaving:
     soc: 100
     max_power: 18000 # 8kW grid + 10kW battery

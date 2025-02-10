@@ -16,13 +16,29 @@ class BatteryLoadStrategy(enum.Enum):
     Reserve = 'Reserve'
     NoCharging = 'NoCharging'
 
+    _current_strategy = None
+
     def from_soc(soc: float, c: Config) -> 'BatteryLoadStrategy':
         if soc < c.battery_soc_no_charging:
+            BatteryLoadStrategy._current_strategy = BatteryLoadStrategy.NoCharging
             return BatteryLoadStrategy.NoCharging
+
+        # When transitioning from NoCharging to Reserve, use the base threshold
         if soc < c.battery_soc_reserve:
+            BatteryLoadStrategy._current_strategy = BatteryLoadStrategy.Reserve
             return BatteryLoadStrategy.Reserve
+
+        # Apply hysteresis for Reserve->PeakShavingMinimal transition
+        if BatteryLoadStrategy._current_strategy == BatteryLoadStrategy.Reserve:
+            # Need higher SOC to exit reserve mode
+            if soc < (c.battery_soc_reserve + c.battery_reserve_hysteresis):
+                return BatteryLoadStrategy.Reserve
+
         if soc < c.battery_soc_peak_shaving_minimal:
+            BatteryLoadStrategy._current_strategy = BatteryLoadStrategy.PeakShavingMininal
             return BatteryLoadStrategy.PeakShavingMininal
+
+        BatteryLoadStrategy._current_strategy = BatteryLoadStrategy.PeakShaving
         return BatteryLoadStrategy.PeakShaving
 
     def max_charing_power_with_grid(self, c: Config) -> float:
@@ -50,7 +66,9 @@ class ChargingPowerSource(enum.Enum):
         if self == ChargingPowerSource.SolarOnly:
             return max(0, pv_power - total_load)
         if self == ChargingPowerSource.MinPlusSolar:
-            return max(c.min_power * c.charge_efficiency_factor, pv_power - total_load)
+            max_grid_power = max(0, pv_power - total_load + battery_strategy.max_charing_power_with_grid(c)) # Full power with battery
+            min_grid_charge = min(max_grid_power, c.min_plus_solar_min_power * c.charge_efficiency_factor) # Min power with grid
+            return max(min_grid_charge, pv_power - total_load)
         if self == ChargingPowerSource.MinBatteryLoad:
             if battery_strategy == BatteryLoadStrategy.PeakShaving:
                 battery_strategy = BatteryLoadStrategy.PeakShavingMininal
@@ -318,6 +336,9 @@ def calculate_charging_amps(c: Config, plan: ChargingPlan, max_power: float, cur
         log.debug(f'Not enough power to charge with {max_amps}A')
         return 0
 
+    # Respect the maximum amps
+    max_amps = min(max_amps, c.max_amps)
+
     # Solar + Nightly: Determine which plan to use
     is_night = False
     remaining_time_s = 0
@@ -372,9 +393,9 @@ def calculate_charging_amps(c: Config, plan: ChargingPlan, max_power: float, cur
     # Reset nightly state when not in nightly mode
     nightly_state.reset()
     
-    # Remaining plans - use the maximum amps that its power source can provide
+    # Remaining plans - use the maximum amps that its power source can provide or vehicle limit
     if plan in [ChargingPlan.Manual, ChargingPlan.SolarOnly, ChargingPlan.MinPlusSolar, ChargingPlan.MinBatteryLoad, ChargingPlan.MaxSpeed]:
-        return min(max_amps, c.max_amps)
+        return max_amps
 
     log.warning('Unknown charging plan')
     return 0
