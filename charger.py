@@ -354,6 +354,8 @@ def calculate_charging_amps(c: Config, plan: ChargingPlan, max_power: float, cur
         is_night, remaining_time_s = get_nightly_time(c)
         if plan == ChargingPlan.SolarPlusNightly:
             plan = ChargingPlan.Nightly if is_night else ChargingPlan.SolarOnly
+            if not is_night:
+                nightly_state.reset()
 
     # Process the plan    
     if plan == ChargingPlan.Nightly:
@@ -397,9 +399,6 @@ def calculate_charging_amps(c: Config, plan: ChargingPlan, max_power: float, cur
             
         nightly_state.update(amps_plan)  # Cache the calculated amps
         return amps_plan
-
-    # Reset nightly state when not in nightly mode
-    nightly_state.reset()
     
     # Remaining plans - use the maximum amps that its power source can provide or vehicle limit
     if plan in [ChargingPlan.Manual, ChargingPlan.SolarOnly, ChargingPlan.MinPlusSolar, ChargingPlan.MinBatteryLoad, ChargingPlan.MaxSpeed]:
